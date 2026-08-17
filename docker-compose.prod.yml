@@ -1,0 +1,46 @@
+services:
+  trigate-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trigate-app
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - trigate_storage:/var/www/html/storage
+      - trigate_bootstrap:/var/www/html/bootstrap/cache
+    expose:
+      - "9000"
+    networks:
+      - trigate_net
+      - app_agrisense
+
+  trigate-nginx:
+    image: nginx:alpine
+    container_name: trigate-nginx
+    restart: always
+    volumes:
+      - ./docker/nginx/trigate.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./public:/var/www/html/public:ro
+      - trigate_storage:/var/www/html/storage:ro
+    expose:
+      - "80"
+    depends_on:
+      - trigate-app
+    networks:
+      - trigate_net
+      - hospital_proxy
+
+volumes:
+  trigate_storage:
+  trigate_bootstrap:
+
+networks:
+  trigate_net:
+    driver: bridge
+  app_agrisense:
+    external: true
+  hospital_proxy:
+    external: true
+    name: hospital-appointment-demo_default
