@@ -1,0 +1,34 @@
+.git
+.github
+
+# Local configuration and credentials must be injected at runtime.
+.env
+.env.*
+auth.json
+.npmrc
+*.key
+*.pem
+storage/app/firebase
+
+# Dependencies are installed in the image build stages.
+vendor
+node_modules
+
+# Development and test-only files.
+tests
+.phpunit.cache
+.phpunit.result.cache
+phpunit.xml
+coverage
+
+# Generated frontend and runtime artifacts.
+public/build
+public/hot
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+bootstrap/cache/*.php
+npm-debug.log*
+yarn-error.log*

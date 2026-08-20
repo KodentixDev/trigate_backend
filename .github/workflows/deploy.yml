@@ -20,24 +20,58 @@ jobs:
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
             cd /root/trigate_backend
-            git fetch origin
-            git reset --hard origin/master
-            docker compose -f docker-compose.prod.yml build trigate-app
-            docker compose -f docker-compose.prod.yml up -d trigate-app trigate-nginx
-            docker network connect hospital-appointment-demo_default trigate-nginx 2>/dev/null || true
-            docker exec trigate-app php artisan migrate --force
-            docker exec trigate-app php artisan config:clear
-            docker exec trigate-app php artisan cache:clear
-            docker exec trigate-app php artisan route:clear
-            docker restart trigate-nginx
+
+            if [ "$(git branch --show-current)" != "master" ]; then
+              echo "Deployment checkout must remain on master"
+              exit 1
+            fi
+
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "Deployment checkout contains tracked or untracked changes"
+              git status --short
+              exit 1
+            fi
+
+            git fetch --prune origin
+            git merge --ff-only origin/master
+
+            if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master)" ]; then
+              echo "Local master does not exactly match origin/master"
+              exit 1
+            fi
+
+            docker compose -f docker-compose.prod.yml build --pull trigate-app
+            docker compose -f docker-compose.prod.yml up -d trigate-app
+            docker compose -f docker-compose.prod.yml exec -T trigate-app php artisan config:clear
+            docker compose -f docker-compose.prod.yml exec -T trigate-app php artisan migrate --force
+            docker compose -f docker-compose.prod.yml exec -T trigate-app php artisan config:cache
+            docker compose -f docker-compose.prod.yml exec -T trigate-app php artisan view:cache
+            docker compose -f docker-compose.prod.yml restart trigate-app
+            docker compose -f docker-compose.prod.yml up -d trigate-nginx
           '
 
       - name: Verify deployment
         run: |
-          sleep 5
-          code=$(curl -s -o /dev/null -w "%{http_code}" "https://trigate.kodentix.com/api/auth/me")
-          echo "GET /api/auth/me -> HTTP $code"
-          if [ "$code" != "401" ]; then
+          base_url="https://trigate.kodentix.com"
+          health_code="000"
+
+          for attempt in {1..12}; do
+            health_code=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$base_url/up" || true)
+            echo "GET /up (attempt $attempt) -> HTTP $health_code"
+            if [ "$health_code" = "200" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$health_code" != "200" ]; then
+            echo "Deployment verification failed: /up did not become healthy"
+            exit 1
+          fi
+
+          auth_code=$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" --connect-timeout 5 --max-time 10 "$base_url/api/auth/me" || true)
+          echo "GET /api/auth/me -> HTTP $auth_code"
+          if [ "$auth_code" != "401" ]; then
             echo "Deployment verification failed: expected 401 Unauthenticated"
             exit 1
           fi
